@@ -28,20 +28,21 @@ namespace MQTTListener
                 .WithTcpServer("66.94.100.229", 1883)
                 .Build();
             client.ConnectAsync(clientOptions);
+            Console.Write("Connected!\nClient Name: " + clientOptions.ClientId + "\n");
 
-            // TO TEST:
-            //*******************************************************************************************
-            //var date = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            //var sensorName = "false_sensor";
-            //var temp = 30.0;
-            //var tempValType = "C";
-            //List<string> SqlCommands = new List<string>();
-            //SqlCommands.Add($"INSERT INTO iot_events" +
-            //                $"(event_date, sensor_id, sensor_value, event_type)" +
-            //                $"VALUES " +
-            //                $"('{date}', '{sensorName}', '{temp}', '{tempValType}')");
-            //SqlExecuteNonQuery(SqlCommands);
-            //********************************************************************************************
+            // Adding a subscription to / sensors / general topic
+            Console.Write("Subscribing to /sensors/values topic on server...");
+            client.UseConnectedHandler(async e =>
+            {
+                Console.WriteLine("### CONNECTED WITH SERVER ###");
+
+                // Subscribe to a topic
+                await client.SubscribeAsync("/sensors/values");
+                //await client.SubscribeAsync("/sensors/general");
+
+                Console.WriteLine("### SUBSCRIBED ###");
+            });
+            Console.Write("Successfully Subscribed!\n\n");
 
 
             client.UseDisconnectedHandler(async e =>
@@ -62,63 +63,53 @@ namespace MQTTListener
             {
                 try
                 {
-                    JsonMessage = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
-                    Console.WriteLine("Message received, Message contents: " + JsonMessage);
-                    //Deserializing the JSON string
-                    JObject jsonObj = JObject.Parse(JsonMessage);
+                    if(e.ApplicationMessage.Topic == "/sensors/values")
+                    {
+                        JsonMessage = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+                        Console.WriteLine("Message received, Message contents: " + JsonMessage);
+                        //Deserializing the JSON string
+                        JObject jsonObj = JObject.Parse(JsonMessage);
 
-                    //Getting the temperature value
-                    string sensorName = jsonObj.Property("SensorName").Value.ToString();
-                    double temperature = Convert.ToDouble(jsonObj.Property("Temperature").Value.ToString());
-                    string tempValType = "TMP";
-                    string date = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                        //Getting the temperature value
+                        string sensorName = jsonObj.Property("SensorName").Value.ToString().Split('_')[1];
+                        double temperature = Convert.ToDouble(jsonObj.Property("Temperature").Value.ToString());
+                        string tempValType = "TMP";
+                        string date = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
-                    double humidity;
-                    string hmdValType = "HMD";
-                    try
-                    {
-                        //Getting the humidity value
-                        humidity = Convert.ToDouble(jsonObj.Property("Humidity").Value.ToString());
-                    }
-                    catch
-                    {
-                        humidity = 0.00;
-                    }
-                    double pressure;
-                    string prsValType = "PRS";
-                    try
-                    {
-                        //Getting the pressure value
-                        pressure = Convert.ToDouble(jsonObj.Property("Pressure").Value.ToString());
-                    }
-                    catch
-                    {
-                        pressure = 0.00;
-                    }
-                    Console.WriteLine(sensorName + " sensor says that the temperature value is " + temperature
-                                      + ", the humidity is " + humidity + ", and the pressure is " + pressure);
+                        double humidity;
+                        string hmdValType = "HMD";
+                        try
+                        {
+                            //Getting the humidity value
+                            humidity = Convert.ToDouble(jsonObj.Property("Humidity").Value.ToString());
+                        }
+                        catch
+                        {
+                            humidity = 0.00;
+                        }
+                        Console.WriteLine(sensorName + " sensor says that the temperature value is " + temperature
+                                          + ", the humidity is " + humidity);
 
-                    List<string> SqlCommands = new List<string>();
-                    SqlCommands.Add($"INSERT INTO IoTValues" +
-                                    $"(Date, SensorName, SensorValue, ValueType)" +
-                                    $"VALUES " +
-                                    $"('{date}', '{sensorName}', '{temperature}', '{tempValType}')");
-                    if (humidity != 0)
-                    {
-                        SqlCommands.Add($"INSERT INTO IoTValues" +
-                                        $"(Date, SensorName, SensorValue, ValueType)" +
+                        List<string> SqlCommands = new List<string>();
+                        SqlCommands.Add($"INSERT INTO iot_events" +
+                                        $"(event_date, sensor_id, sensor_value, event_type)" +
                                         $"VALUES " +
-                                        $"('{date}', '{sensorName}', '{humidity}', '{hmdValType}')");
-                    }
-                    if (pressure != 0)
-                    {
-                        SqlCommands.Add($"INSERT INTO IoTValues" +
-                                        $"(Date, SensorName, SensorValue, ValueType)" +
-                                        $"VALUES " +
-                                        $"('{date}', '{sensorName}', '{pressure}', '{prsValType}')");
-                    }
+                                        $"('{date}', '{sensorName}', '{temperature}', '{tempValType}')");
+                        if (humidity != 0)
+                        {
+                            SqlCommands.Add($"INSERT INTO iot_events" +
+                                            $"(event_date, sensor_id, sensor_value, event_type)" +
+                                            $"VALUES " +
+                                            $"('{date}', '{sensorName}', '{humidity}', '{hmdValType}')");
+                        }
 
-                    SqlExecuteNonQuery(SqlCommands);
+                        SqlExecuteNonQuery(SqlCommands);
+                    }
+                    if (e.ApplicationMessage.Topic == "/sensors/general")
+                    {
+                        var message = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+                        Console.WriteLine("Message received, Message contents: " + message);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -131,23 +122,11 @@ namespace MQTTListener
             {
                 Thread.Sleep(200);
             }
-            Console.Write("Connected!\nClient Name: " + clientOptions.ClientId + "\n");
+           
 
-            //Adding a subscription to /sensors/general topic
-            Console.Write("Subscribing to /sensors/values topic on server...");
-            client.UseConnectedHandler(async e =>
-            {
-                Console.WriteLine("### CONNECTED WITH SERVER ###");
-
-                // Subscribe to a topic
-                await client.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic("/sensors/values").Build());
-
-                Console.WriteLine("### SUBSCRIBED ###");
-            });
-            Console.Write("Successfully Subscribed!\n\n");
             while (client.IsConnected == true)
             {
-                Thread.Sleep(10000);
+                Thread.Sleep(1000);
             }
         }
         private static IList SqlExecuteNonQuery(List<string> SqlStatements)
