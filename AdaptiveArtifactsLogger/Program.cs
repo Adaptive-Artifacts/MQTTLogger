@@ -27,43 +27,27 @@ namespace MQTTListener
                 .WithClientId("MQTT Logger Client")
                 .WithTcpServer("66.94.100.229", 1883)
                 .Build();
-            client.ConnectAsync(clientOptions);
+            client.ConnectAsync(clientOptions, CancellationToken.None);
             Console.Write("Connected!\nClient Name: " + clientOptions.ClientId + "\n");
-
             // Adding a subscription to / sensors / general topic
             Console.Write("Subscribing to /sensors/values topic on server...");
             client.UseConnectedHandler(async e =>
             {
-                Console.WriteLine("### CONNECTED WITH SERVER ###");
-
-                // Subscribe to a topic
                 await client.SubscribeAsync("/sensors/values");
-                //await client.SubscribeAsync("/sensors/general");
-
-                Console.WriteLine("### SUBSCRIBED ###");
+                Console.Write("Successfully Subscribed!\n\n");
             });
-            Console.Write("Successfully Subscribed!\n\n");
-
-
             client.UseDisconnectedHandler(async e =>
             {
-                Console.WriteLine("### DISCONNECTED FROM SERVER ###");
-                await Task.Delay(TimeSpan.FromSeconds(5));
-                try
-                {
-                    await client.ConnectAsync(clientOptions, CancellationToken.None); // Since 3.0.5 with CancellationToken
-                }
-                catch
-                {
-                    Console.WriteLine("### RECONNECTING FAILED ###");
-                }
+                Console.WriteLine("DISCONNECTED");
+                await client.ConnectAsync(clientOptions, CancellationToken.None);
+                Console.WriteLine("CONNECTED");
             });
             //Subscribing to the event when a message is published 
             client.UseApplicationMessageReceivedHandler(e =>
             {
                 try
                 {
-                    if(e.ApplicationMessage.Topic == "/sensors/values")
+                    if (e.ApplicationMessage.Topic == "/sensors/values")
                     {
                         JsonMessage = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
                         Console.WriteLine("Message received, Message contents: " + JsonMessage);
@@ -71,7 +55,7 @@ namespace MQTTListener
                         JObject jsonObj = JObject.Parse(JsonMessage);
 
                         //Getting the temperature value
-                        string sensorName = jsonObj.Property("SensorName").Value.ToString().Split('_')[1];
+                        string sensorName = jsonObj.Property("SensorName").Value.ToString();
                         double temperature = Convert.ToDouble(jsonObj.Property("Temperature").Value.ToString());
                         string tempValType = "TMP";
                         string date = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
@@ -87,8 +71,19 @@ namespace MQTTListener
                         {
                             humidity = 0.00;
                         }
+                        double pressure;
+                        string prsValType = "PRS";
+                        try
+                        {
+                            //Getting the pressure value
+                            pressure = Convert.ToDouble(jsonObj.Property("Pressure").Value.ToString());
+                        }
+                        catch
+                        {
+                            pressure = 0.00;
+                        }
                         Console.WriteLine(sensorName + " sensor says that the temperature value is " + temperature
-                                          + ", the humidity is " + humidity);
+                                          + ", the humidity is " + humidity + ", and the pressure is " + pressure);
 
                         List<string> SqlCommands = new List<string>();
                         SqlCommands.Add($"INSERT INTO iot_events" +
@@ -98,9 +93,16 @@ namespace MQTTListener
                         if (humidity != 0)
                         {
                             SqlCommands.Add($"INSERT INTO iot_events" +
-                                            $"(event_date, sensor_id, sensor_value, event_type)" +
+                                        $"(event_date, sensor_id, sensor_value, event_type)" +
                                             $"VALUES " +
                                             $"('{date}', '{sensorName}', '{humidity}', '{hmdValType}')");
+                        }
+                        if (pressure != 0)
+                        {
+                            SqlCommands.Add($"INSERT INTO iot_events" +
+                                        $"(event_date, sensor_id, sensor_value, event_type)" +
+                                            $"VALUES " +
+                                            $"('{date}', '{sensorName}', '{pressure}', '{prsValType}')");
                         }
 
                         SqlExecuteNonQuery(SqlCommands);
@@ -122,8 +124,6 @@ namespace MQTTListener
             {
                 Thread.Sleep(200);
             }
-           
-
             while (client.IsConnected == true)
             {
                 Thread.Sleep(1000);
